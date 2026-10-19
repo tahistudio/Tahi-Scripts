@@ -30,6 +30,16 @@ A form state visualization tool for complex forms.
 
 [View Documentation](src/features/form-visualizer/DOCS.md)
 
+### Form Guard
+Browser-side spam protection and phone/email validation for Webflow forms that post to an external handler (Pardot, HubSpot). Pin it to a commit.
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/tahistudio/Tahi-Scripts@COMMIT_SHA/dist/form-guard.js"
+  ts-form-selector='form[action*="/l/1051382/"]'></script>
+```
+
+[View Documentation](src/features/form-guard/DOCS.md)
+
 ## Usage with jsDelivr CDN
 
 All scripts are available through jsDelivr's CDN. You can use either:
