@@ -30,6 +30,15 @@ A form state visualization tool for complex forms.
 
 [View Documentation](src/features/form-visualizer/DOCS.md)
 
+### Scored Quiz
+One-question-at-a-time scored quiz with weighted categories, score bands, recommendations and a gated results form that posts to Pardot or HubSpot without leaving the page. Pin it to a commit.
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/tahistudio/Tahi-Scripts@COMMIT_SHA/dist/scored-quiz.js"></script>
+```
+
+[View Documentation](src/features/scored-quiz/DOCS.md)
+
 ## Usage with jsDelivr CDN
 
 All scripts are available through jsDelivr's CDN. You can use either:
