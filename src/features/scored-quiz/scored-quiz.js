@@ -4,7 +4,7 @@
  * bands live in a JSON config on the page; layout and styling stay in Webflow
  * through template elements. Results can be gated behind a form that posts to
  * an external handler (Pardot) in the background, then unlocked in place.
- * @version 0.1.0
+ * @version 0.2.0
  * @author Liam Miller
  * @repository https://github.com/tahistudio/Tahi-Scripts
  */
@@ -46,8 +46,18 @@
      rounded and clamped to 1..100.
      ------------------------------------------------------------------ */
 
+  function validIndex(qq, i) {
+    return typeof i === 'number' && i % 1 === 0 && i >= 0 && i < qq.options.length;
+  }
+
+  function hash(str) {
+    var h = 0;
+    for (var i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  }
+
   function isScored(qq, i) {
-    return !!qq.category && i != null && typeof qq.options[i].score === 'number';
+    return !!qq.category && validIndex(qq, i) && typeof qq.options[i].score === 'number';
   }
 
   function score(config, answers) {
@@ -106,7 +116,7 @@
 
     var id = root.getAttribute('data-sq') || config.id || 'quiz';
     var prefix = config.fieldPrefix || 'sq_';
-    var storeKey = 'sq_' + id;
+    var storeKey = 'sq_' + id + '_' + hash(cfgEl.textContent);
 
     var screens = {
       intro: q(root, '[data-sq-screen="intro"]'),
@@ -134,19 +144,38 @@
       recTpl.parentNode.removeChild(recTpl);
     }
 
-    var state = { index: 0, answers: {}, result: null, started: false };
+    var state = { index: 0, answers: {}, result: null, started: false, completed: false, unlocked: false };
     try {
       var saved = JSON.parse(sessionStorage.getItem(storeKey) || 'null');
       if (saved && saved.answers) {
-        state.answers = saved.answers;
-        state.index = Math.min(saved.index || 0, config.questions.length - 1);
+        config.questions.forEach(function (qq) {
+          if (validIndex(qq, saved.answers[qq.id])) state.answers[qq.id] = saved.answers[qq.id];
+        });
+        var idx = typeof saved.index === 'number' ? saved.index : 0;
+        state.index = Math.max(0, Math.min(idx, config.questions.length - 1));
+        var all = config.questions.every(function (qq) { return state.answers[qq.id] != null; });
+        state.completed = !!saved.completed && all;
+        state.unlocked = state.completed && !!saved.unlocked;
       }
     } catch (e) {}
 
     function save() {
       try {
-        sessionStorage.setItem(storeKey, JSON.stringify({ index: state.index, answers: state.answers }));
+        sessionStorage.setItem(storeKey, JSON.stringify({ index: state.index, answers: state.answers, completed: state.completed, unlocked: state.unlocked }));
       } catch (e) {}
+    }
+
+    var gatedEls = qa(root, '[data-sq-gated]');
+    function setGated(locked) {
+      gatedEls.forEach(function (el) {
+        if (locked) {
+          el.setAttribute('inert', '');
+          el.setAttribute('aria-hidden', 'true');
+        } else {
+          el.removeAttribute('inert');
+          el.removeAttribute('aria-hidden');
+        }
+      });
     }
 
     function show(name) {
@@ -185,10 +214,13 @@
         el.setAttribute('aria-valuemin', '0');
         el.setAttribute('aria-valuemax', String(total));
         el.setAttribute('aria-valuenow', String(state.index));
+        if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', 'Quiz progress');
       });
 
       optionsWrap.innerHTML = '';
       optionsWrap.setAttribute('role', 'radiogroup');
+      optionsWrap.setAttribute('aria-label', qq.text);
+      var current = validIndex(qq, state.answers[qq.id]) ? state.answers[qq.id] : 0;
       qq.options.forEach(function (opt, i) {
         var el = optionTpl.cloneNode(true);
         var label = q(el, '[data-sq-option-label]') || el;
@@ -197,13 +229,20 @@
         var selected = state.answers[qq.id] === i;
         el.setAttribute('aria-checked', selected ? 'true' : 'false');
         el.classList.toggle('is-selected', selected);
-        if (el.tagName !== 'BUTTON') el.setAttribute('tabindex', '0');
+        el.setAttribute('tabindex', i === current ? '0' : '-1');
         el.addEventListener('click', function (e) {
           e.preventDefault();
           choose(i, el);
         });
         el.addEventListener('keydown', function (e) {
-          if (el.tagName !== 'BUTTON' && (e.key === 'Enter' || e.key === ' ')) {
+          var dir = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+          if (dir) {
+            e.preventDefault();
+            var opts = qa(optionsWrap, '[role="radio"]');
+            var to = opts[(i + dir + opts.length) % opts.length];
+            opts.forEach(function (o) { o.setAttribute('tabindex', o === to ? '0' : '-1'); });
+            to.focus();
+          } else if (el.tagName !== 'BUTTON' && (e.key === 'Enter' || e.key === ' ')) {
             e.preventDefault();
             choose(i, el);
           }
@@ -217,6 +256,7 @@
     }
 
     var advancing = false;
+    var advanceTimer = null;
 
     function choose(i, el) {
       if (advancing) return;
@@ -229,8 +269,9 @@
       el.classList.add('is-selected');
       el.setAttribute('aria-checked', 'true');
       advancing = true;
-      window.setTimeout(function () {
+      advanceTimer = window.setTimeout(function () {
         advancing = false;
+        advanceTimer = null;
         next();
       }, REDUCED ? 0 : ADVANCE_MS);
     }
@@ -242,12 +283,20 @@
         renderQuestion();
         focusHeading(screens.question);
       } else {
+        state.completed = true;
         save();
         finish();
       }
     }
 
+    function cancelAdvance() {
+      if (advanceTimer) window.clearTimeout(advanceTimer);
+      advanceTimer = null;
+      advancing = false;
+    }
+
     function back() {
+      cancelAdvance();
       if (state.index > 0) {
         state.index--;
         save();
@@ -259,9 +308,9 @@
       }
     }
 
-    function start() {
+    function start(resumed) {
       state.started = true;
-      push('sq_start', { quiz_id: id });
+      if (!resumed) push('sq_start', { quiz_id: id });
       show('question');
       renderQuestion();
       focusHeading(screens.question);
@@ -285,8 +334,9 @@
       }, 1200);
     }
 
-    function finish() {
+    function finish(resumed) {
       var r = (state.result = score(config, state.answers));
+      setGated(!state.unlocked);
       root.setAttribute('data-sq-tier', String(r.tier.key || r.tier.label).toLowerCase().replace(/[^a-z0-9]+/g, '-'));
       qa(root, '[data-sq-score]').forEach(function (el) {
         animateScore(el, r.overall);
@@ -325,13 +375,22 @@
         });
       }
 
-      push('sq_complete', { quiz_id: id, quiz_score: r.overall, quiz_tier: r.tier.label });
+      if (!resumed) push('sq_complete', { quiz_id: id, quiz_score: r.overall, quiz_tier: r.tier.label });
       show('result');
-      focusHeading(screens.result);
+      if (state.unlocked) root.setAttribute('data-sq-unlocked', '1');
+      /* Focus once the score has finished counting, so screen readers announce the final value */
+      if (!resumed) {
+        window.setTimeout(function () {
+          focusHeading(screens.result);
+        }, REDUCED ? 0 : 950);
+      }
     }
 
     function restart() {
+      cancelAdvance();
       state.index = 0;
+      state.completed = false;
+      state.unlocked = false;
       state.answers = {};
       state.result = null;
       root.removeAttribute('data-sq-unlocked');
@@ -364,6 +423,9 @@
     }
 
     function unlock() {
+      state.unlocked = true;
+      save();
+      setGated(false);
       root.setAttribute('data-sq-unlocked', '1');
       var target = q(root, '[data-sq-unlocked-focus]') || recWrap || catWrap;
       if (target) {
@@ -389,11 +451,11 @@
           });
           hidden(form, prefix + 'answers', config.questions.filter(function (qq) { return qq.category; }).map(function (qq) {
             var i = state.answers[qq.id];
-            return qq.id + '=' + (i == null ? '' : qq.options[i].score);
+            return qq.id + '=' + (isScored(qq, i) ? qq.options[i].score : '');
           }).join(';'));
           config.questions.forEach(function (qq) {
             var i = state.answers[qq.id];
-            if (qq.field && i != null) hidden(form, prefix + qq.field, qq.options[i].label);
+            if (qq.field && validIndex(qq, i)) hidden(form, prefix + qq.field, qq.options[i].label);
           });
           hidden(form, prefix + 'source', id);
 
@@ -456,10 +518,14 @@
       });
     });
 
-    if (screens.intro && Object.keys(state.answers).length === 0) {
+    var resumed = Object.keys(state.answers).length > 0;
+    if (state.completed) {
+      state.started = true;
+      finish(true);
+    } else if (screens.intro && !resumed) {
       show('intro');
     } else {
-      start();
+      start(resumed);
     }
   }
 
@@ -473,5 +539,5 @@
     boot();
   }
 
-  window.TahiScoredQuiz = { score: score, version: '0.1.0' };
+  window.TahiScoredQuiz = { score: score, version: '0.2.0' };
 })();

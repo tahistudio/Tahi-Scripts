@@ -73,7 +73,9 @@ On submit the form gets hidden fields: `{prefix}score`, `{prefix}tier`, `{prefix
 ## State and events
 
 - Root attributes: `data-sq-state` (intro, question, result), `data-sq-tier` (slug of the band label), `data-sq-unlocked`.
-- Progress is kept in sessionStorage so a reload resumes.
+- Progress is kept in sessionStorage so a reload resumes, including a finished or unlocked result (no repeat events, no second post). The key includes a hash of the config, so editing the config starts everyone fresh; saved answers that no longer match an option are dropped.
+- While locked, `[data-sq-gated]` gets `inert` and `aria-hidden="true"`, so the blur cannot be bypassed by keyboard or screen reader.
+- Options use a roving tabindex: arrow keys move between answers, Enter or Space chooses.
 - dataLayer events: `sq_start`, `sq_complete` (quiz_score, quiz_tier), `sq_lead`.
 
 ## Page CSS needed (Webflow cannot express these attribute states)
