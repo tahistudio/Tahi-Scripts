@@ -3,8 +3,9 @@
  * One-question-at-a-time scored quiz for Webflow. Questions, weights and score
  * bands live in a JSON config on the page; layout and styling stay in Webflow
  * through template elements. Results can be gated behind a form that posts to
- * an external handler (Pardot) in the background, then unlocked in place.
- * @version 0.2.0
+ * an external handler (Pardot) in the background, or through Webflow's own
+ * form handling when the form has no action, then unlocked in place.
+ * @version 0.3.0
  * @author Liam Miller
  * @repository https://github.com/tahistudio/Tahi-Scripts
  */
@@ -13,6 +14,7 @@
   'use strict';
 
   var ADVANCE_MS = 260;
+  var SCORE_FINAL_MS = 1200;
   var REDUCED = false;
   try {
     REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -166,6 +168,9 @@
     }
 
     var gatedEls = qa(root, '[data-sq-gated]');
+    var gate = q(root, '[data-sq-gate]');
+    var form = gate && (gate.tagName === 'FORM' ? gate : q(gate, 'form'));
+    var webflowMode = !!form && !form.getAttribute('action');
     function setGated(locked) {
       gatedEls.forEach(function (el) {
         if (locked) {
@@ -331,7 +336,7 @@
       window.requestAnimationFrame(step);
       window.setTimeout(function () {
         el.textContent = String(to);
-      }, 1200);
+      }, SCORE_FINAL_MS);
     }
 
     function finish(resumed) {
@@ -375,6 +380,7 @@
         });
       }
 
+      if (form) fillFields(r);
       if (!resumed) push('sq_complete', { quiz_id: id, quiz_score: r.overall, quiz_tier: r.tier.label });
       show('result');
       if (state.unlocked) root.setAttribute('data-sq-unlocked', '1');
@@ -382,12 +388,19 @@
       if (!resumed) {
         window.setTimeout(function () {
           focusHeading(screens.result);
-        }, REDUCED ? 0 : 950);
+        }, REDUCED ? 0 : SCORE_FINAL_MS + 50);
       }
     }
 
     function restart() {
       cancelAdvance();
+      if (form && webflowMode) {
+        /* webflow.js hid the form and showed the success block; reset for a fresh lead */
+        var done = form.parentNode && q(form.parentNode, '.w-form-done');
+        form.style.display = '';
+        if (done) done.style.display = 'none';
+        watchWebflowSuccess();
+      }
       state.index = 0;
       state.completed = false;
       state.unlocked = false;
@@ -436,29 +449,51 @@
       }
     }
 
-    var gate = q(root, '[data-sq-gate]');
-    var form = gate && (gate.tagName === 'FORM' ? gate : q(gate, 'form'));
+    function fillFields(r) {
+      hidden(form, prefix + 'score', String(r.overall));
+      hidden(form, prefix + 'tier', r.tier.label);
+      r.categories.forEach(function (c) {
+        if (c.score !== null) hidden(form, prefix + 'cat_' + c.id, String(c.score));
+      });
+      hidden(form, prefix + 'answers', config.questions.filter(function (qq) { return qq.category; }).map(function (qq) {
+        var i = state.answers[qq.id];
+        return qq.id + '=' + (isScored(qq, i) ? qq.options[i].score : '');
+      }).join(';'));
+      config.questions.forEach(function (qq) {
+        var i = state.answers[qq.id];
+        if (qq.field && validIndex(qq, i)) hidden(form, prefix + qq.field, qq.options[i].label);
+      });
+      hidden(form, prefix + 'source', id);
+    }
+
+    /* Webflow-handled form (no action): webflow.js submits it and shows the
+       success block. Unlock when that block appears, never on failure. */
+    function watchWebflowSuccess() {
+      var block = form.parentNode;
+      var done = block && q(block, '.w-form-done');
+      if (!done || !window.MutationObserver) return;
+      var obs = new MutationObserver(function () {
+        if (done.style.display && done.style.display !== 'none') {
+          obs.disconnect();
+          unlock();
+        }
+      });
+      obs.observe(done, { attributes: true, attributeFilter: ['style'] });
+    }
+
     if (form) {
+      if (webflowMode) watchWebflowSuccess();
       form.addEventListener(
         'submit',
         function (e) {
           if (form.checkValidity && !form.checkValidity()) return;
           var r = state.result || score(config, state.answers);
-          hidden(form, prefix + 'score', String(r.overall));
-          hidden(form, prefix + 'tier', r.tier.label);
-          r.categories.forEach(function (c) {
-            if (c.score !== null) hidden(form, prefix + 'cat_' + c.id, String(c.score));
-          });
-          hidden(form, prefix + 'answers', config.questions.filter(function (qq) { return qq.category; }).map(function (qq) {
-            var i = state.answers[qq.id];
-            return qq.id + '=' + (isScored(qq, i) ? qq.options[i].score : '');
-          }).join(';'));
-          config.questions.forEach(function (qq) {
-            var i = state.answers[qq.id];
-            if (qq.field && validIndex(qq, i)) hidden(form, prefix + qq.field, qq.options[i].label);
-          });
-          hidden(form, prefix + 'source', id);
+          fillFields(r);
 
+          if (webflowMode) {
+            push('sq_lead', { quiz_id: id, quiz_score: r.overall, quiz_tier: r.tier.label });
+            return;
+          }
           if (root.getAttribute('data-sq-submit-mode') === 'native') return;
 
           e.preventDefault();
@@ -539,5 +574,5 @@
     boot();
   }
 
-  window.TahiScoredQuiz = { score: score, version: '0.2.0' };
+  window.TahiScoredQuiz = { score: score, version: '0.3.0' };
 })();

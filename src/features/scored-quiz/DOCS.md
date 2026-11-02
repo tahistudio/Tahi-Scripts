@@ -68,7 +68,7 @@ Templates are removed and cloned at runtime, so they stay visible and styleable 
 
 ## Gate and fields sent
 
-On submit the form gets hidden fields: `{prefix}score`, `{prefix}tier`, `{prefix}cat_{id}`, `{prefix}answers` (`id=score;...`), `{prefix}{field}` per context question, and `{prefix}source`. The form posts to its own action in a hidden iframe, then the root gets `data-sq-unlocked="1"`. Add `data-sq-submit-mode="native"` on the root to post normally instead. A spam guard listening on window in the capture phase (form-guard) still runs first.
+On submit the form gets hidden fields: `{prefix}score`, `{prefix}tier`, `{prefix}cat_{id}`, `{prefix}answers` (`id=score;...`), `{prefix}{field}` per context question, and `{prefix}source`. The form posts to its own action in a hidden iframe, then the root gets `data-sq-unlocked="1"`. Add `data-sq-submit-mode="native"` on the root to post normally instead. If the form has no action, Webflow handles the submission (form notifications, Webflow spam filtering): the fields are filled as soon as the result shows, webflow.js submits, and results unlock when the success message appears, never on failure. A spam guard listening on window in the capture phase (form-guard) still runs first.
 
 ## State and events
 
