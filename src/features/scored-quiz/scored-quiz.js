@@ -5,7 +5,7 @@
  * through template elements. Results can be gated behind a form that posts to
  * an external handler (Pardot) in the background, or through Webflow's own
  * form handling when the form has no action, then unlocked in place.
- * @version 0.3.0
+ * @version 0.4.0
  * @author Liam Miller
  * @repository https://github.com/tahistudio/Tahi-Scripts
  */
@@ -157,7 +157,7 @@
         state.index = Math.max(0, Math.min(idx, config.questions.length - 1));
         var all = config.questions.every(function (qq) { return state.answers[qq.id] != null; });
         state.completed = !!saved.completed && all;
-        state.unlocked = state.completed && !!saved.unlocked;
+        state.unlocked = !!saved.unlocked;
       }
     } catch (e) {}
 
@@ -392,25 +392,16 @@
       }
     }
 
+    /* Retake keeps an unlock for the rest of the session, so a returning
+       visitor is not asked for their details twice. */
     function restart() {
       cancelAdvance();
-      if (form && webflowMode) {
-        /* webflow.js hid the form and showed the success block; reset for a fresh lead */
-        var done = form.parentNode && q(form.parentNode, '.w-form-done');
-        form.style.display = '';
-        if (done) done.style.display = 'none';
-        watchWebflowSuccess();
-      }
       state.index = 0;
       state.completed = false;
-      state.unlocked = false;
       state.answers = {};
       state.result = null;
-      root.removeAttribute('data-sq-unlocked');
       root.removeAttribute('data-sq-tier');
-      try {
-        sessionStorage.removeItem(storeKey);
-      } catch (e) {}
+      save();
       if (screens.intro) {
         show('intro');
         focusHeading(screens.intro);
@@ -473,12 +464,15 @@
       var done = block && q(block, '.w-form-done');
       if (!done || !window.MutationObserver) return;
       var obs = new MutationObserver(function () {
-        if (done.style.display && done.style.display !== 'none') {
+        if (done.style.display && done.style.display !== 'none' && form.style.display === 'none') {
           obs.disconnect();
+          var r = state.result || score(config, state.answers);
+          push('sq_lead', { quiz_id: id, quiz_score: r.overall, quiz_tier: r.tier.label });
           unlock();
         }
       });
       obs.observe(done, { attributes: true, attributeFilter: ['style'] });
+      obs.observe(form, { attributes: true, attributeFilter: ['style'] });
     }
 
     if (form) {
@@ -490,10 +484,7 @@
           var r = state.result || score(config, state.answers);
           fillFields(r);
 
-          if (webflowMode) {
-            push('sq_lead', { quiz_id: id, quiz_score: r.overall, quiz_tier: r.tier.label });
-            return;
-          }
+          if (webflowMode) return;
           if (root.getAttribute('data-sq-submit-mode') === 'native') return;
 
           e.preventDefault();
@@ -553,6 +544,7 @@
       });
     });
 
+    if (state.unlocked) root.setAttribute('data-sq-unlocked', '1');
     var resumed = Object.keys(state.answers).length > 0;
     if (state.completed) {
       state.started = true;
@@ -564,7 +556,17 @@
     }
   }
 
+  /* Runs as soon as the script loads (before webflow.js reads form settings on
+     ready) so a leftover Redirect URL cannot send the visitor away. */
+  function dropGateRedirects() {
+    qa(document, '[data-sq] [data-sq-gate] form').forEach(function (f) {
+      if (!f.getAttribute('action')) f.removeAttribute('data-redirect');
+    });
+  }
+  dropGateRedirects();
+
   function boot() {
+    dropGateRedirects();
     qa(document, '[data-sq]').forEach(init);
   }
 
@@ -574,5 +576,5 @@
     boot();
   }
 
-  window.TahiScoredQuiz = { score: score, version: '0.3.0' };
+  window.TahiScoredQuiz = { score: score, version: '0.4.0' };
 })();

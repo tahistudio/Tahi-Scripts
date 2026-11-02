@@ -68,12 +68,13 @@ Templates are removed and cloned at runtime, so they stay visible and styleable 
 
 ## Gate and fields sent
 
-On submit the form gets hidden fields: `{prefix}score`, `{prefix}tier`, `{prefix}cat_{id}`, `{prefix}answers` (`id=score;...`), `{prefix}{field}` per context question, and `{prefix}source`. The form posts to its own action in a hidden iframe, then the root gets `data-sq-unlocked="1"`. Add `data-sq-submit-mode="native"` on the root to post normally instead. If the form has no action, Webflow handles the submission (form notifications, Webflow spam filtering): the fields are filled as soon as the result shows, webflow.js submits, and results unlock when the success message appears, never on failure. A spam guard listening on window in the capture phase (form-guard) still runs first.
+On submit the form gets hidden fields: `{prefix}score`, `{prefix}tier`, `{prefix}cat_{id}`, `{prefix}answers` (`id=score;...`), `{prefix}{field}` per context question, and `{prefix}source`. The form posts to its own action in a hidden iframe, then the root gets `data-sq-unlocked="1"`. Add `data-sq-submit-mode="native"` on the root to post normally instead. If the form has no action, Webflow handles the submission (form notifications, Webflow spam filtering): the fields are filled as soon as the result shows, webflow.js submits, and results unlock when the success message appears, never on failure. A Redirect URL on that form is removed so the visitor stays on the page, and `sq_lead` fires only on success. A spam guard listening on window in the capture phase (form-guard) still runs first.
 
 ## State and events
 
 - Root attributes: `data-sq-state` (intro, question, result), `data-sq-tier` (slug of the band label), `data-sq-unlocked`.
 - Progress is kept in sessionStorage so a reload resumes, including a finished or unlocked result (no repeat events, no second post). The key includes a hash of the config, so editing the config starts everyone fresh; saved answers that no longer match an option are dropped.
+- Once unlocked, results stay unlocked for the session, including after Retake, so nobody is asked for details twice.
 - While locked, `[data-sq-gated]` gets `inert` and `aria-hidden="true"`, so the blur cannot be bypassed by keyboard or screen reader.
 - Options use a roving tabindex: arrow keys move between answers, Enter or Space chooses.
 - dataLayer events: `sq_start`, `sq_complete` (quiz_score, quiz_tier), `sq_lead`.
